@@ -12,16 +12,28 @@ extension Bundle {
 
   /// The bundle identifier of this bundle, or nil if not present.
   var bundleIdentifier: String? {
-    return self.bundleValue(forKey: String(kCFBundleIdentifierKey))
+    #if canImport(CoreFoundation)
+      return self.bundleValue(forKey: String(kCFBundleIdentifierKey))
+    #else
+      return nil
+    #endif
   }
 
   /// The build number of this bundle (kCFBundleVersion) as a string, or nil if not present.
   var buildNumber: String? {
-    return self.bundleValue(forKey: String(kCFBundleVersionKey))
+    #if canImport(CoreFoundation)
+      return self.bundleValue(forKey: String(kCFBundleVersionKey))
+    #else
+      return nil
+    #endif
   }
 
   /// The short version string for this bundle, or nil if not present.
   var shortVersion: String? {
-    return self.bundleValue(forKey: "CFBundleShortVersionString")
+    #if canImport(CoreFoundation)
+      return self.bundleValue(forKey: "CFBundleShortVersionString")
+    #else
+      return nil
+    #endif
   }
 }
