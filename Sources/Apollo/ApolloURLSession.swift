@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A protocol for a networking session used by Apollo to execute network requests.
 ///
@@ -19,10 +22,20 @@ public protocol ApolloURLSession: Sendable {
   func chunks(for request: URLRequest) async throws -> (any AsyncChunkSequence, URLResponse)
 }
 
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
 extension URLSession: ApolloURLSession {
   public func chunks(for request: URLRequest) async throws -> (any AsyncChunkSequence, URLResponse) {
     try Task.checkCancellation()
     let (bytes, response) = try await bytes(for: request, delegate: self.delegate as? URLSessionTaskDelegate)
-    return (bytes.chunks, response)
+    return (AsyncHTTPResponseChunkSequence(bytes, response: response as? HTTPURLResponse), response)
   }
 }
+#else
+extension URLSession: ApolloURLSession {
+  public func chunks(for request: URLRequest) async throws -> (any AsyncChunkSequence, URLResponse) {
+    try Task.checkCancellation()
+    let (data, response) = try await data(for: request)
+    return (data.chunks(response: response as? HTTPURLResponse), response)
+  }
+}
+#endif

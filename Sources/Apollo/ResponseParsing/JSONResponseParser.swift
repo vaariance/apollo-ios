@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 public enum JSONResponseParsingError: Swift.Error, LocalizedError {

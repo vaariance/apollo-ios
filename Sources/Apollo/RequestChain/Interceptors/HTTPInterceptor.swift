@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A protocol for an interceptor in a ``RequestChain`` that can perform a unit of work that operates on an
 /// `URLRequest` and ``HTTPResponse``.

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 /// A request class allowing for a multipart-upload request.

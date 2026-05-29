@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 /// A marker protocol to set up an object to pass through the request chain.

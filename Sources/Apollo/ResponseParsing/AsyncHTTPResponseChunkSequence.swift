@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// An `AsyncSequence` that emits `Data` for each chunk of a network response.
 ///
@@ -14,14 +17,17 @@ public protocol AsyncChunkSequence: AsyncSequence, Sendable where Element == Dat
 public struct AsyncHTTPResponseChunkSequence: AsyncChunkSequence {
   public typealias Element = Data
 
-  private let bytes: URLSession.AsyncBytes
-  
+  private let bytes: AnyAsyncByteSequence
+  private let response: HTTPURLResponse?
+
   /// Designated Initializer
   ///
-  /// - Parameter bytes: The response byte stream to be seperated into multi-part chunks. Must be the result of an
-  /// HTTP `URLRequest` to ensure that `bytes.task.response` is an `HTTPURLResponse`.
-  public init(_ bytes: URLSession.AsyncBytes) {
-    self.bytes = bytes
+  /// - Parameters:
+  ///   - bytes: The response byte stream to be separated into multi-part chunks.
+  ///   - response: The HTTP response whose `Content-Type` header determines the multipart boundary.
+  public init<S: AsyncSequence & Sendable>(_ bytes: S, response: HTTPURLResponse?) where S.Element == UInt8 {
+    self.bytes = AnyAsyncByteSequence(bytes)
+    self.response = response
   }
 
   public func makeAsyncIterator() -> AsyncIterator {
@@ -29,7 +35,7 @@ public struct AsyncHTTPResponseChunkSequence: AsyncChunkSequence {
   }
 
   private var chunkBoundary: String? {
-    guard let response = bytes.task.response as? HTTPURLResponse else {
+    guard let response else {
       return nil
     }
 
@@ -39,14 +45,14 @@ public struct AsyncHTTPResponseChunkSequence: AsyncChunkSequence {
   public struct AsyncIterator: AsyncIteratorProtocol {
     public typealias Element = Data
 
-    private var underlyingIterator: URLSession.AsyncBytes.AsyncIterator
+    private var underlyingIterator: AnyAsyncByteSequence.AsyncIterator
 
     private let boundary: Data?
 
     private typealias Constants = MultipartResponseParsing
 
-    init(
-      _ underlyingIterator: URLSession.AsyncBytes.AsyncIterator,
+    fileprivate init(
+      _ underlyingIterator: AnyAsyncByteSequence.AsyncIterator,
       boundary: String?
     ) {
       self.underlyingIterator = underlyingIterator
@@ -93,11 +99,98 @@ public struct AsyncHTTPResponseChunkSequence: AsyncChunkSequence {
   }
 }
 
-// MARK: - AsyncBytes.chunks helper function
+// MARK: - Type-erased async byte sequence
+
+private struct AnyAsyncByteSequence: AsyncSequence, Sendable {
+  typealias Element = UInt8
+
+  private let makeIteratorClosure: @Sendable () -> AsyncIterator
+
+  init<S: AsyncSequence & Sendable>(_ sequence: S) where S.Element == UInt8 {
+    self.makeIteratorClosure = {
+      AsyncIterator(sequence.makeAsyncIterator())
+    }
+  }
+
+  func makeAsyncIterator() -> AsyncIterator {
+    makeIteratorClosure()
+  }
+
+  struct AsyncIterator: AsyncIteratorProtocol {
+    private var box: AnyAsyncByteIteratorBox
+
+    init<I: AsyncIteratorProtocol>(_ iterator: I) where I.Element == UInt8 {
+      self.box = ConcreteAsyncByteIteratorBox(iterator)
+    }
+
+    mutating func next() async throws -> UInt8? {
+      try await box.next()
+    }
+  }
+}
+
+private protocol AnyAsyncByteIteratorBox: Sendable {
+  mutating func next() async throws -> UInt8?
+}
+
+private struct ConcreteAsyncByteIteratorBox<I: AsyncIteratorProtocol>: AnyAsyncByteIteratorBox, @unchecked Sendable where I.Element == UInt8 {
+  private var iterator: I
+
+  init(_ iterator: I) {
+    self.iterator = iterator
+  }
+
+  mutating func next() async throws -> UInt8? {
+    try await iterator.next()
+  }
+}
+
+// MARK: - Data byte sequence (cross-platform fallback)
+
+public struct AsyncDataByteSequence: AsyncSequence, Sendable {
+  public typealias Element = UInt8
+
+  private let data: Data
+
+  public init(_ data: Data) {
+    self.data = data
+  }
+
+  public func makeAsyncIterator() -> AsyncIterator {
+    AsyncIterator(data: data)
+  }
+
+  public struct AsyncIterator: AsyncIteratorProtocol {
+    private let data: Data
+    private var index: Data.Index
+
+    fileprivate init(data: Data) {
+      self.data = data
+      self.index = data.startIndex
+    }
+
+    public mutating func next() async throws -> UInt8? {
+      guard index < data.endIndex else { return nil }
+      defer { index = data.index(after: index) }
+      return data[index]
+    }
+  }
+}
+
+// MARK: - Darwin convenience (URLSession.AsyncBytes)
+#if canImport(Darwin)
 extension URLSession.AsyncBytes {
 
   var chunks: AsyncHTTPResponseChunkSequence {
-    return AsyncHTTPResponseChunkSequence(self)
+    return AsyncHTTPResponseChunkSequence(self, response: task.response as? HTTPURLResponse)
   }
 
+}
+#endif
+
+// MARK: - Cross-platform convenience (Data)
+extension Data {
+  func chunks(response: HTTPURLResponse?) -> AsyncHTTPResponseChunkSequence {
+    AsyncHTTPResponseChunkSequence(AsyncDataByteSequence(self), response: response)
+  }
 }

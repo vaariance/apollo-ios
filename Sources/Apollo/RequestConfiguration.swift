@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// ``RequestConfiguration`` allows you to customize various aspects of individual requests. All ``ApolloClient``
 /// request methods (`fetch`, `perform`, `upload`, `subscribe`) accept an optional `requestConfiguration` parameter.

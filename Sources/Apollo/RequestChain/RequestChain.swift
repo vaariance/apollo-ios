@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 /// Manages a chain of steps taken to execute a ``GraphQLRequest``. ``RequestChain`` enables customization of each step

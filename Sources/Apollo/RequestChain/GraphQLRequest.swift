@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 /// A protocol for a type that represents a request to fetch a ``/ApolloAPI/GraphQLOperation``.

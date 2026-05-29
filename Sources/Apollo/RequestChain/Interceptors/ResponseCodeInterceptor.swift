@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @_spi(Internal) import ApolloAPI
 
 /// An ``HTTPInterceptor`` that checks the response code returned with a request. If the response code indicates a

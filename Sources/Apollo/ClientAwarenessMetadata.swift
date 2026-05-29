@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ApolloAPI
 
 /// A data structure containing telemetry metadata about the client. This is used by GraphOS Studio's

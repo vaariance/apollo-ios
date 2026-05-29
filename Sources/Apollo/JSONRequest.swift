@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @_spi(Internal) import ApolloAPI
 
 /// A request which sends JSON related to a GraphQL operation.
