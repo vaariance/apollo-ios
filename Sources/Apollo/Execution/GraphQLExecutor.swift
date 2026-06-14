@@ -435,7 +435,21 @@ public final class GraphQLExecutor<Source: GraphQLExecutionSource> {
       return PossiblyDeferred { try accumulator.accept(customScalar: value, info: fieldInfo) }
 
     case let (.some(value), .list(innerType)):
-      guard let array = value as? [JSONValue] else {
+      // Mirrors `NetworkResponseExecutionSource.objectData`'s Android fallback: swift-foundation
+      // (Android/Linux) yields list values whose object elements are not directly castable through
+      // `Hashable`, so `value as? [JSONValue]` fails even for valid JSON. Recover via the same
+      // `AnyHashable` cast and, failing that, a JSON round-trip that re-normalizes to `[JSONValue]`.
+      let array: [JSONValue]
+      if let directArray = value as? [JSONValue] {
+        array = directArray
+      } else if let hashableArray = value as? AnyHashable as? [JSONValue] {
+        array = hashableArray
+      } else if JSONSerialization.isValidJSONObject(value),
+        let data = try? JSONSerialization.data(withJSONObject: value),
+        let roundTripped = try? JSONSerializationFormat.deserialize(data: data) as [JSONValue]
+      {
+        array = roundTripped
+      } else {
         return PossiblyDeferred { throw JSONDecodingError.wrongType }
       }
 
@@ -472,7 +486,7 @@ public final class GraphQLExecutor<Source: GraphQLExecutionSource> {
       }
 
     case let (.some(value), .object(rootSelectionSetType)):
-      guard let object = value as! AnyHashable as? Source.RawObjectData else {
+      guard let object = executionSource.objectData(from: value) else {
         return PossiblyDeferred { throw JSONDecodingError.wrongType }
       }
 

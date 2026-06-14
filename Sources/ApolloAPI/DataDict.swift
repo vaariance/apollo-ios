@@ -1,5 +1,46 @@
 import Foundation
 
+public protocol AnyOptionalScalar {
+  static var _none: Self { get }
+  static func _some(_ value: Any) -> Self?
+}
+
+extension Optional: AnyOptionalScalar where Wrapped: AnyScalarType & Hashable & Sendable {
+  public static var _none: Self { nil }
+
+  public static func _some(_ value: Any) -> Self? {
+    if let wrappedValue = value as? Wrapped { return .some(wrappedValue) }
+
+    var current: Any = value
+    var remainingUnwraps = 8
+
+    while remainingUnwraps > 0 {
+      remainingUnwraps -= 1
+
+      guard let hashableValue = current as? AnyHashable else { break }
+
+      let base = hashableValue.base
+      if let wrappedValue = base as? Wrapped { return .some(wrappedValue) }
+
+      current = base
+    }
+
+    return nil
+  }
+}
+
+@usableFromInline
+func unwrapOptionalValue(_ value: Any) -> (isSome: Bool, value: Any?)? {
+  let mirror = Mirror(reflecting: value)
+  guard mirror.displayStyle == .optional else { return nil }
+
+  guard let child = mirror.children.first else {
+    return (false, nil)
+  }
+
+  return (true, child.value)
+}
+
 /// A structure that wraps the underlying data for a ``SelectionSet``.
 @_spi(Unsafe)
 public struct DataDict: Hashable, @unchecked Sendable {
@@ -79,16 +120,73 @@ public struct DataDict: Hashable, @unchecked Sendable {
 
   @inlinable public subscript<T: AnyScalarType & Hashable & Sendable>(_ key: String) -> T {
     get {
-      return _data[key] as? AnyHashable as! T
+      return DataDict.unwrapScalar(_data[key])
     }
     set {
       _data[key] = newValue
     }
     _modify {
-      var value = _data[key] as! T
+      var value: T = DataDict.unwrapScalar(_data[key])
       defer { _data[key] = value }
       yield &value
     }
+  }
+
+  /// Unwraps a stored `FieldValue` into a concrete scalar `T`.
+  ///
+  /// On Apple platforms `storedValue as! T` unwraps directly. On swift-foundation
+  /// (Android/Linux), casting an `AnyHashable`/existential to a concrete type via `as!`
+  /// can fail, so unwrap through `AnyHashable.base` (a plain `Any`) before casting.
+  @usableFromInline
+  static func unwrapScalar<T: AnyScalarType & Hashable & Sendable>(_ storedValue: FieldValue?) -> T {
+    if let value = storedValue as? T { return value }
+
+    let optionalScalarType = T.self as? any AnyOptionalScalar.Type
+
+    var current: Any? = storedValue
+    var remainingUnwraps = 8
+
+    while remainingUnwraps > 0 {
+      remainingUnwraps -= 1
+
+      guard let value = current else {
+        if let optionalScalarType, let none = optionalScalarType._none as? T {
+          return none
+        }
+        break
+      }
+
+      if let typedValue = value as? T { return typedValue }
+
+      if let optionalValue = unwrapOptionalValue(value) {
+        guard optionalValue.isSome, let wrappedValue = optionalValue.value else {
+          if let optionalScalarType, let none = optionalScalarType._none as? T {
+            return none
+          }
+          break
+        }
+
+        if let optionalScalarType, let some = optionalScalarType._some(wrappedValue) as? T {
+          return some
+        }
+
+        current = wrappedValue
+        continue
+      }
+
+      guard let hashableValue = value as? AnyHashable else { break }
+
+      let base = hashableValue.base
+      if let typedValue = base as? T { return typedValue }
+
+      if let optionalScalarType, let some = optionalScalarType._some(base) as? T {
+        return some
+      }
+
+      current = base
+    }
+
+    fatalError("Could not unwrap scalar value of type \(String(describing: type(of: storedValue))) as \(T.self).")
   }
 
   @inlinable public subscript<T: SelectionSetEntityValue>(_ key: String) -> T {

@@ -50,6 +50,22 @@ public protocol GraphQLExecutionSource {
     in schema: any SchemaMetadata.Type,
     inferredToImplementInterface implementedInterface: Interface?
   ) -> CacheKey?
+
+  /// Coerces a resolved field `value` into the source's `RawObjectData` for an object-typed field.
+  ///
+  /// Implemented on the source so the cast targets a *concrete* type. Some Swift runtimes
+  /// (notably swift-foundation on Android) resolve a dynamic cast to a generic associated type
+  /// differently from a concrete cast, so `value as? RawObjectData` in the generic executor can
+  /// fail where a concrete `value as? <ConcreteObjectData>` succeeds.
+  func objectData(from value: JSONValue) -> RawObjectData?
+}
+
+@_spi(Execution)
+extension GraphQLExecutionSource {
+  public func objectData(from value: JSONValue) -> RawObjectData? {
+    if let object = value as? RawObjectData { return object }
+    return value as? AnyHashable as? RawObjectData
+  }
 }
 
 /// A type of `GraphQLExecutionSource` that uses the user defined cache key computation

@@ -1,3 +1,4 @@
+import Foundation
 @_spi(Internal) import ApolloAPI
 
 struct BaseResponseExecutionHandler: Sendable {
@@ -11,7 +12,7 @@ struct BaseResponseExecutionHandler: Sendable {
     rootKey: CacheReference,
     variables: GraphQLOperation.Variables?
   ) {
-    self.responseBody = try! JSONObject(_jsonValue: responseBody as JSONValue)
+    self.responseBody = responseBody
     self.rootKey = rootKey
     self.variables = variables
   }
@@ -26,7 +27,7 @@ struct BaseResponseExecutionHandler: Sendable {
     selectionSet: Data.Type,
     with accumulator: Accumulator
   ) async throws -> Accumulator.FinalResult? {
-    guard let dataEntry = responseBody["data"] as? JSONObject else {
+    guard let dataEntry = jsonObject(responseBody["data"]) else {
       return nil
     }
 
@@ -49,7 +50,7 @@ struct BaseResponseExecutionHandler: Sendable {
     in operation: Operation.Type,
     with accumulator: Accumulator
   ) async throws -> Accumulator.FinalResult? {
-    guard let dataEntry = responseBody["data"] as? JSONObject else {
+    guard let dataEntry = jsonObject(responseBody["data"]) else {
       return nil
     }
 
@@ -68,7 +69,7 @@ struct BaseResponseExecutionHandler: Sendable {
   }
 
   func parseErrors() -> [GraphQLError]? {
-    guard let errorsEntry = self.responseBody["errors"] as? [JSONObject] else {
+    guard let errorsEntry = jsonObjects(responseBody["errors"]) else {
       return nil
     }
 
@@ -78,6 +79,37 @@ struct BaseResponseExecutionHandler: Sendable {
   }
 
   func parseExtensions() -> JSONObject? {
-    return self.responseBody["extensions"] as? JSONObject
+    return jsonObject(responseBody["extensions"])
+  }
+
+  private func jsonObject(_ value: JSONValue?) -> JSONObject? {
+    guard let value else { return nil }
+    if let object = value as? JSONObject { return object }
+    if let object = value as? AnyHashable as? JSONObject { return object }
+    guard JSONSerialization.isValidJSONObject(value),
+      let data = try? JSONSerialization.data(withJSONObject: value),
+      let object = try? JSONSerializationFormat.deserialize(data: data) as JSONObject
+    else {
+      return nil
+    }
+    return object
+  }
+
+  private func jsonObjects(_ value: JSONValue?) -> [JSONObject]? {
+    guard let value else { return nil }
+    if let objects = value as? [JSONObject] { return objects }
+    if let objects = value as? AnyHashable as? [JSONObject] { return objects }
+    if let values = value as? [JSONValue] {
+      let objects = values.compactMap(jsonObject)
+      return objects.count == values.count ? objects : nil
+    }
+    guard JSONSerialization.isValidJSONObject(value),
+      let data = try? JSONSerialization.data(withJSONObject: value),
+      let objects = try? JSONSerializationFormat.deserialize(data: data) as [JSONValue]
+    else {
+      return nil
+    }
+    let converted = objects.compactMap(jsonObject)
+    return converted.count == objects.count ? converted : nil
   }
 }

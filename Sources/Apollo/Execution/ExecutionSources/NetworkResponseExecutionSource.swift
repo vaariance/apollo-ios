@@ -1,3 +1,4 @@
+import Foundation
 @_spi(Internal) @_spi(Execution) import ApolloAPI
 
 /// A `GraphQLExecutionSource` configured to execute upon the JSON data from the network response
@@ -6,6 +7,23 @@
 public struct NetworkResponseExecutionSource: GraphQLExecutionSource, CacheKeyComputingExecutionSource, Sendable {
   public typealias RawObjectData = JSONObject
   public typealias FieldCollector = DefaultFieldSelectionCollector
+
+  /// Casts object-typed field values using the concrete `JSONObject` type.
+  ///
+  /// The generic executor's `value as? Source.RawObjectData` cast fails on Android for values
+  /// that otherwise cast correctly to concrete `JSONObject`. The serialization fallback handles
+  /// swift-foundation values that are valid JSON but not directly castable through `Hashable`.
+  public func objectData(from value: JSONValue) -> JSONObject? {
+    if let object = value as? JSONObject { return object }
+    if let object = value as? AnyHashable as? JSONObject { return object }
+    guard JSONSerialization.isValidJSONObject(value),
+      let data = try? JSONSerialization.data(withJSONObject: value),
+      let object = try? JSONSerializationFormat.deserialize(data: data) as JSONObject
+    else {
+      return nil
+    }
+    return object
+  }
 
   /// Used to determine whether deferred selections within a selection set should be executed at the same
   /// time as the other selections.
