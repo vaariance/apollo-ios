@@ -48,7 +48,7 @@ public final class JSONSerializationFormat {
     }
 
     if let hashableValue = value as? AnyHashable {
-      return hashableValue as JSONValue
+      return _eraseToJSONValue(hashableValue)
     }
 
     throw JSONDecodingError.couldNotConvert(

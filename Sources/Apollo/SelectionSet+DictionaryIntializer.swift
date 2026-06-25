@@ -4,6 +4,16 @@ public enum RootSelectionSetInitializeError: Error {
   case hasNonHashableValue
 }
 
+// AnyHashable lost its unconditional `Sendable` conformance in the Xcode 27 / Swift 6.x toolchain,
+// so it can no longer be erased to `JSONValue` (= any Sendable & Hashable), and `Sendable` — a
+// marker protocol — cannot appear in a dynamic cast. `Sendable` adds no witness table, so
+// `any Hashable` and `JSONValue` share an identical existential layout; reinterpreting between them
+// is layout-safe and preserves the underlying value (JSON scalars are genuinely Sendable).
+@inline(__always)
+func _eraseToJSONValue(_ value: AnyHashable) -> JSONValue {
+  unsafeBitCast(value as any Hashable, to: JSONValue.self)
+}
+
 extension RootSelectionSet {
   /// Initializes a `SelectionSet` with a raw JSON response object.
   ///
@@ -37,7 +47,7 @@ extension RootSelectionSet {
         if let dictValue = value as? [String: Any] {
           result[key] = try convertToAnyHashableValueDict(dict: dictValue) as JSONValue
         } else if let hashableValue = value as? AnyHashable {
-          result[key] = hashableValue as JSONValue
+          result[key] = _eraseToJSONValue(hashableValue)
         } else {
           throw RootSelectionSetInitializeError.hasNonHashableValue
         }
@@ -57,7 +67,7 @@ extension RootSelectionSet {
       } else if let dict = value as? [String: Any] {
         result.append(try convertToAnyHashableValueDict(dict: dict) as JSONValue)
       } else if let hashable = value as? AnyHashable {
-        result.append(hashable as JSONValue)
+        result.append(_eraseToJSONValue(hashable))
       } else {
         throw RootSelectionSetInitializeError.hasNonHashableValue
       }
